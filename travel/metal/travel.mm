@@ -51,25 +51,26 @@ route_cost find_best_route(int const* distances, int N) {
     __strong id<MTLCommandQueue> command_queue = [mtldevice newCommandQueue];
     __strong id<MTLCommandBuffer> command_buffer = [command_queue commandBuffer];
     __strong id<MTLComputeCommandEncoder> command_encoder = [command_buffer computeCommandEncoder];
-    [command_encoder setComputePipelineState:compute_pipeline_state];
-
-    int* dev_distances = (int*)__distances.contents;
-    memcpy(dev_distances, distances, N*N*sizeof(int));
-    [command_encoder setBuffer:__distances offset:0 atIndex:0];
-    [command_encoder setBytes:&N length:sizeof(int) atIndex:1];
 
     long num_routes = factorial(N);
-    [command_encoder setBytes:&num_routes length:sizeof(long) atIndex:2];
+    int* dev_distances = (int*)__distances.contents;
+    memcpy(dev_distances, distances, N*N*sizeof(int));
     route_cost* block_best = (route_cost*)__block_best.contents;
+    unsigned long num_blocks = 96;
+    MTLSize numThreadgroups{num_blocks, 1, 1}, threadsPerGroup{1024, 1, 1};
+
+    [command_encoder setComputePipelineState:compute_pipeline_state];
+    [command_encoder setBuffer:__distances offset:0 atIndex:0];
+    [command_encoder setBytes:&N length:sizeof(int) atIndex:1];
+    [command_encoder setBytes:&num_routes length:sizeof(long) atIndex:2];
     [command_encoder setBuffer:__block_best offset:0 atIndex:3];
-    MTLSize numThreadgroups{96, 1, 1}, threadsPerGroup{1024, 1, 1};
     [command_encoder dispatchThreadgroups:numThreadgroups threadsPerThreadgroup:threadsPerGroup];
     [command_encoder endEncoding];
     [command_buffer commit];
     [command_buffer waitUntilCompleted];
 
     route_cost best_route;
-    for (int i = 0; i < 96; ++i)
+    for (int i = 0; i < num_blocks; ++i)
         best_route = route_cost::minf(best_route, block_best[i]);
     return best_route;
 }
