@@ -14,7 +14,7 @@ kernel void find_best_kernel(device int* distances [[buffer(0)]],
                              unsigned laneid [[thread_index_in_simdgroup]],
                              unsigned sid [[simdgroup_index_in_threadgroup]]) {
     route_cost local_best{-1, 1<<30};
-    threadgroup route_cost best[1024];
+    threadgroup route_cost best[32];
     if (sid == 0)
         best[laneid] = local_best;
     threadgroup_barrier(metal::mem_flags::mem_threadgroup);
