@@ -62,15 +62,14 @@ route_cost find_best_route(int const* distances, int N) {
     [command_encoder setBytes:&num_routes length:sizeof(long) atIndex:2];
     route_cost* block_best = (route_cost*)__block_best.contents;
     [command_encoder setBuffer:__block_best offset:0 atIndex:3];
-
-    MTLSize numThreadgroups{1024, 1, 1}, threadsPerGroup{1024, 1, 1};
+    MTLSize numThreadgroups{96, 1, 1}, threadsPerGroup{1024, 1, 1};
     [command_encoder dispatchThreadgroups:numThreadgroups threadsPerThreadgroup:threadsPerGroup];
     [command_encoder endEncoding];
     [command_buffer commit];
     [command_buffer waitUntilCompleted];
 
     route_cost best_route;
-    for (int i = 0; i < 1024; ++i)
+    for (int i = 0; i < 96; ++i)
         best_route = route_cost::minf(best_route, block_best[i]);
     return best_route;
 }
