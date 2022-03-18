@@ -16,7 +16,12 @@ char const* city_names[MAX_CITIES] = {
 };
 
 int* init(int N) {
-  int* distances = new int[N * N];
+
+  int* distances;
+  NSUInteger const pageSize = getpagesize();
+  NSUInteger const allocationSize = (N*N*sizeof(int) + pageSize) & ~(pageSize - 1);
+  posix_memalign((void**)&distances, pageSize, allocationSize);
+
   std::mt19937 r;
   std::shuffle(city_names, city_names + N, r);
   for (int i = 0; i < N; ++i) {
@@ -40,25 +45,23 @@ long factorial(long x) {
   return x * factorial(x - 1);
 }
 
-route_cost find_best_route(int const* distances, int N) {
+route_cost find_best_route(int* distances, int N) {
+
+    NSUInteger const pageSize = getpagesize();
+    NSUInteger const allocationSize = (N*N*sizeof(int) + pageSize) & ~(pageSize - 1);
+    long num_routes = factorial(N);
+    unsigned long num_blocks = 96;
+    MTLSize numThreadgroups{num_blocks, 1, 1}, threadsPerGroup{1024, 1, 1};
 
     __strong id<MTLDevice> mtldevice = MTLCreateSystemDefaultDevice();
-    __strong id<MTLBuffer> __distances = [mtldevice newBufferWithLength:N*N*sizeof(int) options:MTLResourceStorageModeShared];
-    __strong id<MTLBuffer> __block_best = [mtldevice newBufferWithLength:1024*sizeof(route_cost) options:MTLResourceStorageModeShared];
+    __strong id<MTLBuffer> __distances = [mtldevice newBufferWithBytesNoCopy:distances length:allocationSize options:MTLResourceStorageModeShared deallocator:nil];
+    __strong id<MTLBuffer> __block_best = [mtldevice newBufferWithLength:num_blocks*sizeof(route_cost) options:MTLResourceStorageModeShared];
     __strong id<MTLLibrary> library = [mtldevice newDefaultLibrary];
     __strong id<MTLFunction> function = [library newFunctionWithName:@"find_best_kernel"];
     __strong id<MTLComputePipelineState> compute_pipeline_state = [mtldevice newComputePipelineStateWithFunction:function error:0];
     __strong id<MTLCommandQueue> command_queue = [mtldevice newCommandQueue];
     __strong id<MTLCommandBuffer> command_buffer = [command_queue commandBuffer];
     __strong id<MTLComputeCommandEncoder> command_encoder = [command_buffer computeCommandEncoder];
-
-    long num_routes = factorial(N);
-    int* dev_distances = (int*)__distances.contents;
-    memcpy(dev_distances, distances, N*N*sizeof(int));
-    route_cost* block_best = (route_cost*)__block_best.contents;
-    unsigned long num_blocks = 96;
-    MTLSize numThreadgroups{num_blocks, 1, 1}, threadsPerGroup{1024, 1, 1};
-
     [command_encoder setComputePipelineState:compute_pipeline_state];
     [command_encoder setBuffer:__distances offset:0 atIndex:0];
     [command_encoder setBytes:&N length:sizeof(int) atIndex:1];
@@ -70,6 +73,7 @@ route_cost find_best_route(int const* distances, int N) {
     [command_buffer waitUntilCompleted];
 
     route_cost best_route;
+    route_cost* block_best = (route_cost*)__block_best.contents;
     for (int i = 0; i < num_blocks; ++i)
         best_route = route_cost::minf(best_route, block_best[i]);
     return best_route;
@@ -91,7 +95,7 @@ int main(int argc, char **argv) {
     std::cout << N << " must be between 1 and " << MAX_CITIES << ".\n";
     return 1;
   }
-  int const* distances = init(N);
+  int* distances = init(N);
 
   find_best_route(distances, std::min(N, 5));
 
